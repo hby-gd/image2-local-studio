@@ -1930,9 +1930,9 @@
         <form id="configForm" class="config-form">
           <label class="field">
             <span>API 地址</span>
-            <input id="apiBaseUrlInput" name="apiBaseUrl" placeholder="https://ruoli.dev 或 https://ruoli.dev/v1" required />
+            <input id="apiBaseUrlInput" name="apiBaseUrl" placeholder="https://api.wenrugouai.cn 或 https://api.wenrugouai.cn/v1" required />
             <small>支持填根地址、`/v1` 或完整 `/images/generations`。</small>
-            <small>如果你还没有可用接口，也可以通过这个兼容提供方申请一组：<a class="card-link" href="https://ruoli.dev/register?aff=8GLe" target="_blank" rel="noreferrer">ruoli.dev/register?aff=8GLe</a></small>
+            <small>默认示例按当前提供方填写为 `https://api.wenrugouai.cn/`。</small>
           </label>
 
           <label class="field">
@@ -1940,9 +1940,9 @@
             <input
               id="imageGenerationEndpointInput"
               name="imageGenerationEndpoint"
-              placeholder="https://ruoli.dev/v1/images/generations"
+              placeholder="https://api.wenrugouai.cn/v1/images/generations"
             />
-            <small>默认按当前提供方示例填写为 `https://ruoli.dev/v1/images/generations`。如果你的中转不是这个路径，可以直接手动改成自己的完整图片生成地址。</small>
+            <small>默认按当前提供方示例填写为 `https://api.wenrugouai.cn/v1/images/generations`。如果你的中转不是这个路径，可以直接手动改成自己的完整图片生成地址。</small>
           </label>
 
           <label class="field">
@@ -1950,6 +1950,23 @@
             <input id="apiKeyInput" name="apiKey" type="password" placeholder="sk-..." required />
             <small>纯前端版会把 key 保存在浏览器本地，请只在你信任的机器上使用。`codex-team` 是令牌分组，不是额外请求参数。</small>
           </label>
+
+          <div class="field-grid">
+            <label class="field">
+              <span>访问模式</span>
+              <select id="transportModeInput" name="transportMode">
+                <option value="browser">浏览器直连</option>
+                <option value="proxy">本地代理</option>
+              </select>
+              <small>如果上游没开 CORS，改用本地代理。</small>
+            </label>
+
+            <label class="field">
+              <span>本地代理地址</span>
+              <input id="proxyOriginInput" name="proxyOrigin" placeholder="http://127.0.0.1:8787" />
+              <small>先运行 `node server.js`。推荐直接用这个地址打开页面。</small>
+            </label>
+          </div>
 
           <div class="field-grid">
             <label class="field">
@@ -1970,7 +1987,7 @@
 
           <div class="form-note">
             <strong>注意</strong>
-            <span>如果上游接口不支持浏览器跨域访问，纯前端方案本身就没法直连，这不是页面能绕过的问题。</span>
+            <span>如果上游接口不支持浏览器跨域访问，浏览器直连本身就没法绕过。此时请切到“本地代理”，由本机转发请求。</span>
           </div>
 
           <div class="form-note">
@@ -2254,7 +2271,10 @@
         elements.apiBaseUrlInput = document.querySelector("#apiBaseUrlInput");
         elements.imageGenerationEndpointInput = document.querySelector("#imageGenerationEndpointInput");
         elements.apiKeyInput = document.querySelector("#apiKeyInput");
+        elements.transportModeInput = document.querySelector("#transportModeInput");
+        elements.proxyOriginInput = document.querySelector("#proxyOriginInput");
         elements.timeoutSecondsInput = document.querySelector("#timeoutSecondsInput");
+        elements.defaultResponseFormatInput = document.querySelector("#defaultResponseFormatInput");
         elements.configTestStatus = document.querySelector("#configTestStatus");
         elements.testConnectionButton = document.querySelector("#testConnectionButton");
         elements.testImageModelButton = document.querySelector("#testImageModelButton");
@@ -2304,12 +2324,15 @@
           elements.apiBaseUrlInput,
           elements.imageGenerationEndpointInput,
           elements.apiKeyInput,
+          elements.transportModeInput,
+          elements.proxyOriginInput,
           elements.timeoutSecondsInput,
           elements.defaultResponseFormatInput,
         ]) {
           input.addEventListener("input", resetConfigTestVisuals);
           input.addEventListener("change", resetConfigTestVisuals);
         }
+        elements.transportModeInput.addEventListener("change", updateTransportModeVisibility);
 
         elements.generateForm.addEventListener("submit", (event) => {
           event.preventDefault();
@@ -3036,6 +3059,8 @@
                 }),
               },
               config.timeoutSeconds * 1000,
+              {},
+              config,
             );
             return extractTextFromResponsesJson(response);
           } catch (responseError) {
@@ -3056,6 +3081,8 @@
                   }),
                 },
                 config.timeoutSeconds * 1000,
+                {},
+                config,
               );
               return extractTextFromChatJson(response, responseError);
             } catch (chatError) {
@@ -3209,10 +3236,13 @@
       }
 
       function readConfig() {
+        const defaultProxyOrigin = getSuggestedProxyOrigin();
         const fallback = {
-          apiBaseUrl: "https://ruoli.dev/",
-          imageGenerationEndpoint: "https://ruoli.dev/v1/images/generations",
+          apiBaseUrl: "https://api.wenrugouai.cn/",
+          imageGenerationEndpoint: "https://api.wenrugouai.cn/v1/images/generations",
           apiKey: "",
+          transportMode: "browser",
+          proxyOrigin: defaultProxyOrigin,
           timeoutSeconds: 130,
           defaultResponseFormat: "b64_json",
         };
@@ -3235,17 +3265,20 @@
       function syncConfigInputs() {
         const config = state.config;
         elements.apiBaseUrlInput.value = config.apiBaseUrl || "";
-        elements.imageGenerationEndpointInput.value = config.imageGenerationEndpoint || "https://ruoli.dev/v1/images/generations";
+        elements.imageGenerationEndpointInput.value = config.imageGenerationEndpoint || "https://api.wenrugouai.cn/v1/images/generations";
         elements.apiKeyInput.value = config.apiKey || "";
+        elements.transportModeInput.value = config.transportMode || "browser";
+        elements.proxyOriginInput.value = config.proxyOrigin || getSuggestedProxyOrigin();
         elements.timeoutSecondsInput.value = config.timeoutSeconds || 130;
         elements.defaultResponseFormatInput.value = config.defaultResponseFormat || "b64_json";
+        updateTransportModeVisibility();
       }
 
       function applyConfigToView({ syncGenerationForm = false } = {}) {
         const config = state.config;
         elements.statusPill.textContent = config.apiBaseUrl && config.apiKey ? "连接已配置" : "等待配置";
         elements.statusPill.classList.toggle("success", Boolean(config.apiBaseUrl && config.apiKey));
-        elements.timeoutSummary.textContent = `当前超时 ${config.timeoutSeconds || 130} 秒；重开页面后仍能看到图片，是因为浏览器缓存还在。`;
+        elements.timeoutSummary.textContent = `当前 ${config.transportMode === "proxy" ? "本地代理" : "浏览器直连"} / 超时 ${config.timeoutSeconds || 130} 秒；重开页面后仍能看到图片，是因为浏览器缓存还在。`;
         elements.exportSummary.textContent = "导出：下载文件 / 写入手选文件夹；若怕重复占空间，导出后可删除已选缓存。";
         syncConfigInputs();
         updateStorageSummary();
@@ -3283,6 +3316,8 @@
         const apiBaseUrl = elements.apiBaseUrlInput.value.trim();
         const imageGenerationEndpoint = elements.imageGenerationEndpointInput.value.trim();
         const apiKey = elements.apiKeyInput.value.trim();
+        const transportMode = elements.transportModeInput.value === "proxy" ? "proxy" : "browser";
+        const proxyOrigin = elements.proxyOriginInput.value.trim() || getSuggestedProxyOrigin();
         const timeoutSeconds = clampNumber(elements.timeoutSecondsInput.value, 30, 300, 130);
         const defaultResponseFormat = elements.defaultResponseFormatInput.value;
 
@@ -3296,10 +3331,17 @@
           return;
         }
 
+        if (transportMode === "proxy" && !proxyOrigin) {
+          showToast("本地代理地址不能为空。");
+          return;
+        }
+
         state.config = {
           apiBaseUrl,
           imageGenerationEndpoint,
           apiKey,
+          transportMode,
+          proxyOrigin,
           timeoutSeconds,
           defaultResponseFormat,
         };
@@ -3316,8 +3358,27 @@
           apiBaseUrl: elements.apiBaseUrlInput.value.trim(),
           imageGenerationEndpoint: elements.imageGenerationEndpointInput.value.trim(),
           apiKey: elements.apiKeyInput.value.trim(),
+          transportMode: elements.transportModeInput.value === "proxy" ? "proxy" : "browser",
+          proxyOrigin: elements.proxyOriginInput.value.trim() || getSuggestedProxyOrigin(),
           timeoutSeconds: clampNumber(elements.timeoutSecondsInput.value, 30, 300, 130),
         };
+      }
+
+      function updateTransportModeVisibility() {
+        const usingProxy = elements.transportModeInput.value === "proxy";
+        elements.proxyOriginInput.disabled = !usingProxy;
+        elements.proxyOriginInput.placeholder = usingProxy ? getSuggestedProxyOrigin() : "当前未使用";
+      }
+
+      function getSuggestedProxyOrigin() {
+        try {
+          if (window.location && /^https?:$/i.test(window.location.protocol)) {
+            return window.location.origin;
+          }
+        } catch {
+          // ignore window origin detection failures
+        }
+        return "http://127.0.0.1:8787";
       }
 
       function setConfigTestStatus(message) {
@@ -3392,6 +3453,8 @@
               }),
             },
             config.timeoutSeconds * 1000,
+            {},
+            config,
           );
 
           const count = Array.isArray(response?.data) ? response.data.length : 0;
@@ -3669,7 +3732,10 @@
       function normalizeEndpoint(baseUrl, imageGenerationEndpoint = "") {
         const explicit = String(imageGenerationEndpoint || "").trim();
         if (explicit) {
-          return explicit.replace(/\/+$/, "");
+          return validateExplicitImageEndpoint(explicit, {
+            expectedKind: "generations",
+            fieldLabel: "图片生成地址（可选）",
+          });
         }
 
         const trimmed = String(baseUrl || "").trim().replace(/\/+$/, "");
@@ -3688,11 +3754,15 @@
       function normalizeEditsEndpoint(baseUrl, imageGenerationEndpoint = "") {
         const explicit = String(imageGenerationEndpoint || "").trim().replace(/\/+$/, "");
         if (explicit) {
+          const validated = validateExplicitImageEndpoint(explicit, {
+            expectedKind: "edits",
+            fieldLabel: "图片生成地址（可选）",
+          });
           if (/\/images\/edits$/i.test(explicit)) {
-            return explicit;
+            return validated;
           }
           if (/\/images\/generations$/i.test(explicit)) {
-            return explicit.replace(/\/images\/generations$/i, "/images/edits");
+            return validated.replace(/\/images\/generations$/i, "/images/edits");
           }
         }
 
@@ -3747,6 +3817,69 @@
           return `${trimmed}/chat/completions`;
         }
         return `${trimmed}/v1/chat/completions`;
+      }
+
+      function validateExplicitImageEndpoint(value, { expectedKind = "generations", fieldLabel = "图片生成地址（可选）" } = {}) {
+        const trimmed = String(value || "").trim().replace(/\/+$/, "");
+        if (!trimmed) {
+          throw new Error(`${fieldLabel} 不能为空。`);
+        }
+
+        let parsed;
+        try {
+          parsed = new URL(trimmed);
+        } catch {
+          return trimmed;
+        }
+
+        const pathname = parsed.pathname || "/";
+        if (pathname === "/" || /\.html?$/i.test(pathname)) {
+          throw new Error(`${fieldLabel} 看起来像网页地址，不是接口地址。请清空它，或改成类似 \`${parsed.origin}/v1/images/${expectedKind}\` 的完整接口路径。`);
+        }
+
+        if (!/\/images\/(generations|edits)$/i.test(pathname) && !/\/v\d+($|\/)/i.test(pathname)) {
+          throw new Error(`${fieldLabel} 看起来不像图片接口路径。请清空它，或改成类似 \`${parsed.origin}/v1/images/${expectedKind}\` 的完整接口路径。`);
+        }
+
+        return trimmed;
+      }
+
+      function usesLocalProxy(config = state.config) {
+        return (config?.transportMode || "browser") === "proxy";
+      }
+
+      function normalizeProxyOrigin(proxyOrigin) {
+        const trimmed = String(proxyOrigin || "").trim().replace(/\/+$/, "");
+        if (!trimmed) {
+          throw new Error("请先填写本地代理地址。");
+        }
+        try {
+          const parsed = new URL(trimmed);
+          if (!/^https?:$/i.test(parsed.protocol)) {
+            throw new Error("只支持 http 或 https。");
+          }
+          return parsed.origin;
+        } catch {
+          throw new Error("本地代理地址格式不合法。请填写类似 `http://127.0.0.1:8787` 的根地址。");
+        }
+      }
+
+      function buildTransportRequest(url, options = {}, config = state.config) {
+        const requestUrl = String(url || "").trim();
+        if (!usesLocalProxy(config)) {
+          return { url: requestUrl, options };
+        }
+
+        const headers = new Headers(options.headers || {});
+        headers.set("x-upstream-url", requestUrl);
+
+        return {
+          url: new URL("/proxy", `${normalizeProxyOrigin(config.proxyOrigin)}/`).toString(),
+          options: {
+            ...options,
+            headers,
+          },
+        };
       }
 
       async function generateImages() {
@@ -3989,22 +4122,43 @@
         return formData;
       }
 
-      async function fetchJsonWithTimeout(url, options, timeoutMs, hooks = {}) {
+      async function fetchJsonWithTimeout(url, options, timeoutMs, hooks = {}, config = state.config) {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const request = buildTransportRequest(url, options, config);
 
         try {
-          const response = await fetch(url, { ...options, signal: controller.signal });
+          const response = await fetch(request.url, { ...request.options, signal: controller.signal });
           const contentLength = Number(response.headers.get("content-length")) || 0;
+          const contentType = response.headers.get("content-type") || "";
           hooks.onResponseStart?.({ contentLength, status: response.status });
           const text = await readResponseText(response, ({ received }) => {
             hooks.onDownloadProgress?.({ received, total: contentLength });
           });
-          const json = text ? JSON.parse(text) : {};
+          const json = parseMaybeJson(text, contentType);
 
           if (!response.ok) {
-            const message = json?.error?.message || json?.message || `HTTP ${response.status}`;
+            const message =
+              json?.error?.message ||
+              json?.message ||
+              describeUnexpectedResponse({
+                status: response.status,
+                contentType,
+                text,
+                config,
+              });
             throw new Error(message);
+          }
+
+          if (text && !json) {
+            throw new Error(
+              describeUnexpectedResponse({
+                status: response.status,
+                contentType,
+                text,
+                config,
+              }),
+            );
           }
 
           return json;
@@ -4013,12 +4167,85 @@
             throw new Error("请求超时，请把超时调到 120 秒以上。");
           }
 
-          if (error instanceof SyntaxError) {
-            throw new Error("接口返回了非 JSON 内容。");
+          if (String(error.message || "").includes("Failed to fetch")) {
+            if (usesLocalProxy(config)) {
+              throw new Error("本地代理连接失败。先运行 `node server.js`，再确认代理地址可访问。");
+            }
+            throw new Error("浏览器直连失败。大概率是 CORS 被上游拦截，纯前端版无法绕过这个限制。");
+          }
+
+          throw error;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      function parseMaybeJson(text, contentType = "") {
+        const source = String(text || "");
+        if (!source) {
+          return {};
+        }
+
+        const looksLikeJson =
+          /\bjson\b/i.test(String(contentType || "")) ||
+          /^[\s\r\n]*[{[]/.test(source);
+
+        if (!looksLikeJson) {
+          return null;
+        }
+
+        try {
+          return JSON.parse(source);
+        } catch {
+          return null;
+        }
+      }
+
+      function describeUnexpectedResponse({ status, contentType, text, config }) {
+        const normalized = String(text || "").replace(/\s+/g, " ").trim();
+        const snippet = trimText(normalized, 180);
+        const typeLabel = contentType ? `content-type: ${contentType}` : "没有 content-type";
+
+        if (/^\s*<!doctype html/i.test(text || "") || /^\s*<html/i.test(text || "")) {
+          if (usesLocalProxy(config)) {
+            return `接口返回了 HTML 页面，不是 JSON。当前请求大概率没有打到这个项目自带的 server.js 代理，而是打到了别的网页服务。请把本地代理地址改成 ` + "`http://127.0.0.1:8787`" + ` 这种根地址，并确认你打开页面的也是同一个地址。HTTP ${status}，${typeLabel}${snippet ? `，片段：${snippet}` : ""}`;
+          }
+          return `接口返回了 HTML 页面，不是 JSON。通常是请求地址不对，或上游返回了网关错误页。HTTP ${status}，${typeLabel}${snippet ? `，片段：${snippet}` : ""}`;
+        }
+
+        return `接口返回了非 JSON 内容。HTTP ${status}，${typeLabel}${snippet ? `，片段：${snippet}` : ""}`;
+      }
+
+      async function fetchBlobWithTimeout(url, options, timeoutMs, config = state.config) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const request = buildTransportRequest(url, options, config);
+
+        try {
+          const response = await fetch(request.url, { ...request.options, signal: controller.signal });
+          if (!response.ok) {
+            let message = `HTTP ${response.status}`;
+            try {
+              const text = await response.text();
+              if (text) {
+                message = trimText(text, 160);
+              }
+            } catch {
+              // ignore proxy error body read failures
+            }
+            throw new Error(message);
+          }
+          return response.blob();
+        } catch (error) {
+          if (error.name === "AbortError") {
+            throw new Error("下载远程图片超时。");
           }
 
           if (String(error.message || "").includes("Failed to fetch")) {
-            throw new Error("浏览器直连失败。大概率是 CORS 被上游拦截，纯前端版无法绕过这个限制。");
+            if (usesLocalProxy(config)) {
+              throw new Error("本地代理连接失败。先运行 `node server.js`，再确认代理地址可访问。");
+            }
+            throw new Error("浏览器无法直接下载远程图片。可以切到 `b64_json`，或改用本地代理模式。");
           }
 
           throw error;
@@ -4135,8 +4362,7 @@
         }
 
         try {
-          const response = await fetch(item.url, { mode: "cors" });
-          const blob = await response.blob();
+          const blob = await fetchBlobWithTimeout(item.url, { method: "GET", mode: "cors" }, (state.config.timeoutSeconds || 130) * 1000);
           const dataUrl = await blobToDataUrl(blob);
           const mimeType = blob.type || "image/png";
           return {
@@ -4792,11 +5018,7 @@
         }
 
         if (item.remoteUrl) {
-          const response = await fetch(item.remoteUrl, { mode: "cors" });
-          if (!response.ok) {
-            throw new Error(`下载远程图片失败：HTTP ${response.status}`);
-          }
-          return response.blob();
+          return fetchBlobWithTimeout(item.remoteUrl, { method: "GET", mode: "cors" }, (state.config?.timeoutSeconds || 130) * 1000);
         }
 
         throw new Error("当前记录没有可导出的图片数据。");
